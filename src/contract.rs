@@ -1,8 +1,6 @@
-use aioracle_base::{Executor, GetServiceFeesMsg, Reward, ServiceMsg};
 use cosmwasm_std::{
-    attr, from_slice, to_binary, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env,
-    HandleResponse, HumanAddr, InitResponse, MessageInfo, MigrateResponse, Order, StdError,
-    StdResult, Uint128, KV,
+    attr, from_slice, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut,
+    Env, MessageInfo, Order, Response, StdError, StdResult, Uint128,
 };
 
 use cw2::set_contract_version;
@@ -23,13 +21,13 @@ use crate::executors::{
 };
 
 use crate::msg::{
-    CurrentStageResponse, GetParticipantFee, GetServiceContracts, GetServiceFees, HandleMsg,
-    InitMsg, IsClaimedResponse, LatestStageResponse, MigrateMsg, QueryMsg, Report, RequestResponse,
-    StageInfo, UpdateConfigMsg,
+    CurrentStageResponse, ExecuteMsg, GetParticipantFee, GetServiceContracts, GetServiceFees,
+    InstantiateMsg, IsClaimedResponse, LatestStageResponse, MigrateMsg, QueryMsg, Report,
+    RequestResponse, ServiceFeesMsg, ServiceMsg, StageInfo, UpdateConfigMsg,
 };
 use crate::state::{
-    executors_map, requests, Config, Contracts, Request, CHECKPOINT, CLAIM, CONFIG, CONTRACT_FEES,
-    EVIDENCES, EXECUTORS_INDEX, LATEST_STAGE,
+    executors_map, get_range_params, requests, Config, Contracts, Executor, Request, Reward,
+    CHECKPOINT, CLAIM, CONFIG, CONTRACT_FEES, EVIDENCES, EXECUTORS_INDEX, LATEST_STAGE,
 };
 use std::collections::HashMap;
 
@@ -43,11 +41,8 @@ pub const DENOM: &str = "orai";
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:aioracle-v2";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
-// settings for pagination
-pub const MAX_LIMIT: u8 = 50;
-pub const DEFAULT_LIMIT: u8 = 20;
 
-pub fn init(deps: DepsMut, _env: Env, info: MessageInfo, msg: InitMsg) -> StdResult<InitResponse> {
+pub fn init(deps: DepsMut, _env: Env, info: MessageInfo, msg: InitMsg) -> StdResult<Response> {
     let owner = msg.owner.unwrap_or(info.sender);
 
     CONTRACT_FEES.save(deps.storage, &msg.contract_fee)?;
@@ -75,7 +70,7 @@ pub fn init(deps: DepsMut, _env: Env, info: MessageInfo, msg: InitMsg) -> StdRes
         .executors
         .into_iter()
         .map(|executor| -> Executor {
-            let final_executor: Executor = Executor {
+            let final_executor = Executor {
                 pubkey: executor,
                 executing_power: 0u64,
                 index: executor_index,
@@ -89,28 +84,28 @@ pub fn init(deps: DepsMut, _env: Env, info: MessageInfo, msg: InitMsg) -> StdRes
     save_executors(deps.storage, final_executors)?;
     EXECUTORS_INDEX.save(deps.storage, &executor_index)?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    Ok(InitResponse::default())
+    Ok(Response::default())
 }
 
 pub fn handle(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    msg: HandleMsg,
-) -> Result<HandleResponse, ContractError> {
+    msg: ExecuteMsg,
+) -> Result<Response, ContractError> {
     match msg {
-        HandleMsg::UpdateConfig { update_config_msg } => {
+        ExecuteMsg::UpdateConfig { update_config_msg } => {
             execute_update_config(deps, env, info, update_config_msg)
         }
-        // HandleMsg::ToggleExecutorActiveness { pubkey } => {
+        // ExecuteMsg::ToggleExecutorActiveness { pubkey } => {
         //     toggle_executor_activeness(deps, info,, pubkey)
         // }
-        HandleMsg::RegisterMerkleRoot {
+        ExecuteMsg::RegisterMerkleRoot {
             stage,
             merkle_root,
             executors,
         } => execute_register_merkle_root(deps, env, info, stage, merkle_root, executors),
-        HandleMsg::Request {
+        ExecuteMsg::Request {
             service,
             input,
             threshold,
@@ -124,18 +119,20 @@ pub fn handle(
             threshold,
             preference_executor_fee,
         ),
-        // HandleMsg::ClaimReward {
+        // ExecuteMsg::ClaimReward {
         //     stage,
         //     report,
         //     proof,
         // } => handle_claim(deps, env, stage, report, proof),
-        HandleMsg::WithdrawFees { amount, denom } => handle_withdraw_fees(deps, env, amount, denom),
-        HandleMsg::PrepareWithdrawPool { pubkey } => {
+        ExecuteMsg::WithdrawFees { amount, denom } => {
+            handle_withdraw_fees(deps, env, amount, denom)
+        }
+        ExecuteMsg::PrepareWithdrawPool { pubkey } => {
             handle_prepare_withdraw_pool(deps, env, info, pubkey)
         }
-        HandleMsg::ExecutorJoin { executor } => handle_executor_join(deps, env, info, executor),
-        HandleMsg::ExecutorLeave { executor } => handle_executor_leave(deps, env, info, executor),
-        HandleMsg::SubmitEvidence {
+        ExecuteMsg::ExecutorJoin { executor } => handle_executor_join(deps, env, info, executor),
+        ExecuteMsg::ExecutorLeave { executor } => handle_executor_leave(deps, env, info, executor),
+        ExecuteMsg::SubmitEvidence {
             stage,
             report,
             proof,
@@ -148,19 +145,19 @@ pub fn migrate(
     _env: Env,
     _info: MessageInfo,
     _msg: MigrateMsg,
-) -> StdResult<MigrateResponse> {
+) -> StdResult<Response> {
     // migrate_v02_to_v03(deps.storage)?;
     let executor_index = EXECUTORS_INDEX.load(deps.storage)?;
     EXECUTORS_INDEX.save(deps.storage, &(executor_index + 1))?;
 
     // once we have "migrated", set the new version and return success
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    Ok(MigrateResponse {
+    Ok(Response {
         attributes: vec![
             attr("new_contract_name", CONTRACT_NAME),
             attr("new_contract_version", CONTRACT_VERSION),
         ],
-        ..MigrateResponse::default()
+        ..Response::default()
     })
 }
 
@@ -169,19 +166,16 @@ pub fn handle_withdraw_fees(
     env: Env,
     amount: Uint128,
     denom: String,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     let Config { owner, .. } = CONFIG.load(deps.storage)?;
     let cosmos_msgs: Vec<CosmosMsg> = vec![BankMsg::Send {
-        from_address: env.contract.address.clone(),
         to_address: owner,
         amount: vec![Coin { amount, denom }],
     }
     .into()];
-    Ok(HandleResponse {
-        attributes: vec![attr("action", "withdraw_fees")],
-        messages: cosmos_msgs,
-        data: None,
-    })
+    Ok(Response::new()
+        .add_attributes(vec![attr("action", "withdraw_fees")])
+        .add_messages(cosmos_msgs))
 }
 
 pub fn execute_update_config(
@@ -189,7 +183,7 @@ pub fn execute_update_config(
     _env: Env,
     info: MessageInfo,
     update_config_msg: UpdateConfigMsg,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     // authorize owner
     let UpdateConfigMsg {
         new_owner,
@@ -254,11 +248,7 @@ pub fn execute_update_config(
         remove_executors(deps.storage, executors)?;
     }
 
-    Ok(HandleResponse {
-        attributes: vec![attr("action", "update_config")],
-        messages: vec![],
-        data: None,
-    })
+    Ok(Response::new().add_attributes(vec![attr("action", "update_config")]))
 }
 
 pub fn handle_request(
@@ -269,7 +259,7 @@ pub fn handle_request(
     input: Option<String>,
     threshold: u64,
     preference_executor_fee: Coin,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     let stage = LATEST_STAGE.update(deps.storage, |stage| -> StdResult<_> { Ok(stage + 1) })?;
     let Config {
         contract_fee,
@@ -298,7 +288,7 @@ pub fn handle_request(
 
     if !bound_executor_fee.amount.is_zero() {
         rewards.push((
-            HumanAddr::from("placeholder"),
+            Addr::from("placeholder"),
             bound_executor_fee.denom,
             bound_executor_fee.amount,
         ));
@@ -340,7 +330,7 @@ pub fn handle_request(
         },
     )?;
 
-    Ok(HandleResponse {
+    Ok(Response {
         data: None,
         messages: vec![],
         attributes: vec![
@@ -359,7 +349,7 @@ pub fn handle_submit_evidence(
     stage: u64,
     report: Binary,
     proofs: Option<Vec<String>>,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     let Config {
         trusting_period,
         slashing_amount,
@@ -418,7 +408,7 @@ pub fn handle_submit_evidence(
         EVIDENCES.save(deps.storage, evidence_key.as_bytes(), &true)?;
     }
 
-    Ok(HandleResponse {
+    Ok(Response {
         data: None,
         messages: cosmos_msgs,
         attributes: vec![
@@ -435,7 +425,7 @@ pub fn execute_register_merkle_root(
     stage: u64,
     mroot: String,
     executors: Vec<Binary>,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     let Config {
         owner,
         checkpoint_threshold,
@@ -489,15 +479,11 @@ pub fn execute_register_merkle_root(
     // check if can increase checkpoint. Can only increase when all requests in range have merkle root
     process_checkpoint(deps, stage, checkpoint_threshold)?;
 
-    Ok(HandleResponse {
-        data: None,
-        messages: vec![],
-        attributes: vec![
-            attr("action", "register_merkle_root"),
-            attr("current_stage", stage.to_string()),
-            attr("merkle_root", mroot),
-        ],
-    })
+    Ok(Response::new().add_attributes(vec![
+        attr("action", "register_merkle_root"),
+        attr("current_stage", stage.to_string()),
+        attr("merkle_root", mroot),
+    ]))
 }
 
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
@@ -658,32 +644,6 @@ pub fn query_request(deps: Deps, stage: u64) -> StdResult<Request> {
     Ok(request)
 }
 
-fn _get_range_params(
-    limit: Option<u8>,
-    offset: Option<u64>,
-    order: Option<u8>,
-) -> (usize, Option<Bound>, Option<Bound>, Order) {
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    let mut min: Option<Bound> = None;
-    let mut max: Option<Bound> = None;
-    let mut order_enum = Order::Ascending;
-    if let Some(num) = order {
-        if num == 2 {
-            order_enum = Order::Descending;
-        }
-    }
-
-    // if there is offset, assign to min or max
-    if let Some(offset) = offset {
-        let offset_value = Some(Bound::Exclusive(offset.to_be_bytes().to_vec()));
-        match order_enum {
-            Order::Ascending => min = offset_value,
-            Order::Descending => max = offset_value,
-        }
-    };
-    (limit, min, max, order_enum)
-}
-
 fn parse_request<'a>(item: StdResult<KV<Request>>) -> StdResult<RequestResponse> {
     item.and_then(|(k, request)| {
         // will panic if length is greater than 8, but we can make sure it is u64
@@ -711,7 +671,7 @@ pub fn query_requests(
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<RequestResponse>> {
-    let (limit, min, max, order_enum) = _get_range_params(limit, offset, order);
+    let (limit, min, max, order_enum) = get_range_params(limit, offset, order);
     let requests: StdResult<Vec<RequestResponse>> = requests()
         .range(deps.storage, min, max, order_enum)
         .take(limit)
@@ -727,7 +687,11 @@ pub fn query_requests_by_service(
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<RequestResponse>> {
-    let (limit, min, max, order_enum) = _get_range_params(limit, offset, order);
+    let (limit, min, max, order_enum) = get_range_params(
+        offset.map(|v| v.to_be_bytes().to_vec().as_slice()),
+        limit,
+        order,
+    );
     let request_responses: StdResult<Vec<RequestResponse>> = requests()
         .idx
         .service
@@ -745,7 +709,7 @@ pub fn query_requests_by_merkle_root(
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<RequestResponse>> {
-    let (limit, min, max, order_enum) = _get_range_params(limit, offset, order);
+    let (limit, min, max, order_enum) = get_range_params(limit, offset, order);
     let request_responses: StdResult<Vec<RequestResponse>> = requests()
         .idx
         .merkle_root
@@ -858,9 +822,9 @@ pub fn get_participant_fee(
     let executor_reward: Coin = deps
         .querier
         .query_wasm_smart(
-            HumanAddr::from(service_addr),
+            service_addr,
             &GetParticipantFee {
-                get_participant_fee: GetServiceFeesMsg {
+                get_participant_fee: ServiceFeesMsg {
                     addr: executor_addr,
                 },
             },
@@ -872,7 +836,7 @@ pub fn get_participant_fee(
     Ok(executor_reward)
 }
 
-pub fn pubkey_to_address(pubkey: &Binary) -> Result<HumanAddr, ContractError> {
+pub fn pubkey_to_address(pubkey: &Binary) -> Result<Addr, ContractError> {
     let msg_hash_generic = sha2::Sha256::digest(pubkey.as_slice());
     let msg_hash = msg_hash_generic.as_slice();
     let mut hasher = Ripemd160::new();
@@ -881,7 +845,7 @@ pub fn pubkey_to_address(pubkey: &Binary) -> Result<HumanAddr, ContractError> {
     let result_slice = result.as_slice();
     let encoded = bech32::encode("orai", result_slice.to_base32(), Variant::Bech32)
         .map_err(|err| ContractError::Std(StdError::generic_err(err.to_string())))?;
-    Ok(HumanAddr::from(encoded))
+    Ok(Addr::unchecked(encoded))
 }
 
 fn process_checkpoint(deps: DepsMut, stage: u64, checkpoint_threshold: u64) -> StdResult<()> {

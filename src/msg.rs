@@ -1,23 +1,29 @@
-use aioracle_base::{GetServiceFeesMsg, Reward, ServiceMsg};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use cosmwasm_schema::cw_serde;
+use cosmwasm_std::{Addr, Binary, Coin, Uint128};
 
-use cosmwasm_std::{Binary, Coin, HumanAddr, Uint128};
+use crate::state::{Reward, TrustingPool};
 
-use crate::state::TrustingPool;
+#[cw_serde]
+pub struct ServiceMsg {
+    pub service: String,
+}
 
-#[derive(Serialize, Deserialize, JsonSchema)]
-pub struct InitMsg {
+#[cw_serde]
+pub struct ServiceFeesMsg {
+    pub addr: Addr,
+}
+
+#[cw_serde]
+pub struct InstantiateMsg {
     /// Owner if none set to info.sender.
-    pub owner: Option<HumanAddr>,
-    pub service_addr: HumanAddr,
+    pub owner: Option<Addr>,
+    pub service_addr: Addr,
     pub contract_fee: Coin,
     pub executors: Vec<Binary>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum HandleMsg {
+#[cw_serde]
+pub enum ExecuteMsg {
     UpdateConfig {
         update_config_msg: UpdateConfigMsg,
     },
@@ -61,8 +67,7 @@ pub enum HandleMsg {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub enum QueryMsg {
     Config {},
     GetExecutors {
@@ -130,21 +135,18 @@ pub enum QueryMsg {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct ConfigResponse {
     pub owner: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct ExecutorsResponse {
     pub pubkey: Binary,
     pub is_acitve: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct TrustingPoolResponse {
     pub pubkey: Binary,
     pub current_height: u64,
@@ -152,55 +154,48 @@ pub struct TrustingPoolResponse {
     pub trusting_pool: TrustingPool,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct StageInfo {
     pub latest_stage: u64,
     pub checkpoint: u64,
     pub checkpoint_threshold: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct Report {
     pub executor: Binary,
     pub data: Binary,
     pub rewards: Vec<Reward>,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct GetServiceContracts {
     pub service_contracts_msg: ServiceMsg,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct GetServiceFees {
     pub service_fee_msg: ServiceMsg,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct GetBoundExecutorFee {
     pub get_bound_executor_fee: BoundExecutorFeeMsg,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct BoundExecutorFeeMsg {}
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub struct GetParticipantFee {
-    pub get_participant_fee: GetServiceFeesMsg,
+    pub get_participant_fee: ServiceFeesMsg,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct RequestResponse {
     pub stage: u64,
     /// Owner If None set, contract is frozen.
-    pub requester: HumanAddr,
+    pub requester: Addr,
     pub request_height: u64,
     pub submit_merkle_height: u64,
     /// Owner If None set, contract is frozen.
@@ -210,28 +205,28 @@ pub struct RequestResponse {
     pub rewards: Vec<Reward>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct LatestStageResponse {
     pub latest_stage: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct CurrentStageResponse {
     pub current_stage: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct IsClaimedResponse {
     pub is_claimed: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct MigrateMsg {}
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct UpdateConfigMsg {
-    pub new_owner: Option<HumanAddr>,
-    pub new_service_addr: Option<HumanAddr>,
+    pub new_owner: Option<Addr>,
+    pub new_service_addr: Option<Addr>,
     pub new_contract_fee: Option<Coin>,
     pub new_executors: Option<Vec<Binary>>,
     pub old_executors: Option<Vec<Binary>>,

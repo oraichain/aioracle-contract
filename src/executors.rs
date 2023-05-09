@@ -1,17 +1,16 @@
 use std::ops::{Add, Sub};
 
-use aioracle_base::Executor;
 use cosmwasm_std::{
-    attr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, HandleResponse, MessageInfo, Order,
+    attr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order, Response,
     StdError, StdResult, Storage, Uint128,
 };
-use cw_storage_plus::Bound;
 
 use crate::{
-    contract::{pubkey_to_address, DEFAULT_LIMIT, MAX_LIMIT},
+    contract::pubkey_to_address,
     msg::{BoundExecutorFeeMsg, GetBoundExecutorFee, TrustingPoolResponse},
     state::{
-        executors_map, Config, TrustingPool, CONFIG, EXECUTORS_INDEX, EXECUTORS_TRUSTING_POOL,
+        executors_map, get_range_params, Config, Executor, TrustingPool, CONFIG, EXECUTORS_INDEX,
+        EXECUTORS_TRUSTING_POOL,
     },
     ContractError,
 };
@@ -21,7 +20,7 @@ pub fn handle_executor_join(
     env: Env,
     info: MessageInfo,
     executor: Binary,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     let executor_human = pubkey_to_address(&executor)?;
     if info.sender.ne(&executor_human) {
         return Err(ContractError::Unauthorized {});
@@ -56,14 +55,10 @@ pub fn handle_executor_join(
         })?;
     let new_index = executor_index.max(new_executor.index);
     EXECUTORS_INDEX.save(deps.storage, &new_index)?;
-    Ok(HandleResponse {
-        data: None,
-        messages: vec![],
-        attributes: vec![
-            attr("action", "executor_join_aioracle"),
-            attr("executor", executor),
-        ],
-    })
+    Ok(Response::new().add_attributes(vec![
+        attr("action", "executor_join_aioracle"),
+        // attr("executor", executor),
+    ]))
 }
 
 pub fn handle_executor_leave(
@@ -71,7 +66,7 @@ pub fn handle_executor_leave(
     env: Env,
     info: MessageInfo,
     executor: Binary,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     let executor_human = pubkey_to_address(&executor)?;
     if info.sender.ne(&executor_human) {
         return Err(ContractError::Unauthorized {});
@@ -91,14 +86,10 @@ pub fn handle_executor_leave(
                 "Executor not existed!",
             )));
         })?;
-        return Ok(HandleResponse {
-            messages: vec![],
-            attributes: vec![
-                attr("action", "executor_leave_aioracle"),
-                attr("executor", executor),
-            ],
-            data: None,
-        });
+        return Ok(Response::new().add_attributes(vec![
+            attr("action", "executor_leave_aioracle"),
+            // attr("executor", executor),
+        ]));
     }
     Err(ContractError::ExecutorAlreadyLeft {})
 }
@@ -175,7 +166,7 @@ pub fn handle_prepare_withdraw_pool(
     env: Env,
     info: MessageInfo,
     pubkey: Binary,
-) -> Result<HandleResponse, ContractError> {
+) -> Result<Response, ContractError> {
     let executor_addr = pubkey_to_address(&pubkey)?;
     let Config {
         trusting_period, ..
@@ -200,8 +191,7 @@ pub fn handle_prepare_withdraw_pool(
         // add execute tx to automatically withdraw orai from pool
         cosmos_msgs.push(
             BankMsg::Send {
-                from_address: env.contract.address.clone(),
-                to_address: executor_addr,
+                to_address: executor_addr.to_string(),
                 amount: vec![Coin {
                     denom: trusting_pool.withdraw_amount_coin.denom.clone(),
                     amount: trusting_pool.withdraw_amount_coin.amount.clone(),
@@ -229,11 +219,9 @@ pub fn handle_prepare_withdraw_pool(
     }
     EXECUTORS_TRUSTING_POOL.save(deps.storage, pubkey.as_slice(), &trusting_pool)?;
 
-    Ok(HandleResponse {
-        attributes: vec![attr("action", "handle_withdraw_pool")],
-        messages: cosmos_msgs,
-        data: None,
-    })
+    Ok(Response::new()
+        .add_attributes(vec![attr("action", "handle_withdraw_pool")])
+        .add_messages(cosmos_msgs))
 }
 
 pub fn update_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> StdResult<()> {
@@ -270,34 +258,6 @@ pub fn update_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> St
 
 // query functions
 
-fn get_executors_params(
-    offset: Option<Binary>,
-    limit: Option<u8>,
-    order: Option<u8>,
-) -> (usize, Option<Bound>, Option<Bound>, Order) {
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    // let mut max: Option<Bound> = None;
-    let mut order_enum = Order::Ascending;
-    let mut min: Option<Bound> = None;
-    let mut max: Option<Bound> = None;
-    if let Some(num) = order {
-        if num == 2 {
-            order_enum = Order::Descending;
-        }
-    }
-    let offset_value = offset
-        .as_ref()
-        .map(|offset| Bound::Exclusive(offset.to_vec()));
-
-    // if there is offset, assign to min or max
-    match order_enum {
-        Order::Ascending => min = offset_value,
-        Order::Descending => max = offset_value,
-    }
-
-    (limit, min, max, order_enum)
-}
-
 pub fn query_trusting_pool(
     deps: Deps,
     env: Env,
@@ -318,14 +278,14 @@ pub fn query_trusting_pool(
 pub fn query_trusting_pools(
     deps: Deps,
     env: Env,
-    offset: Option<Binary>,
+    offset: Option<&[u8]>,
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<TrustingPoolResponse>> {
     let Config {
         trusting_period, ..
     } = CONFIG.load(deps.storage)?;
-    let (limit, min, max, order_enum) = get_executors_params(offset, limit, order);
+    let (limit, min, max, order_enum) = get_range_params(offset, limit, order);
 
     let res: StdResult<Vec<TrustingPoolResponse>> = EXECUTORS_TRUSTING_POOL
         .range(deps.storage, min, max, order_enum)
@@ -352,11 +312,11 @@ pub fn query_executor(deps: Deps, pubkey: Binary) -> StdResult<Executor> {
 
 pub fn query_executors(
     deps: Deps,
-    offset: Option<Binary>,
+    offset: Option<&[u8]>,
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<Executor>> {
-    let (limit, min, max, order_enum) = get_executors_params(offset, limit, order);
+    let (limit, min, max, order_enum) = get_range_params(offset, limit, order);
 
     let res: StdResult<Vec<Executor>> = executors_map()
         .range(deps.storage, min, max, order_enum)
@@ -372,41 +332,17 @@ pub fn query_executors(
     res
 }
 
-fn get_executors_by_index_params(
-    offset: Option<u64>,
-    limit: Option<u8>,
-    order: Option<u8>,
-) -> (usize, Option<Bound>, Option<Bound>, Order) {
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    // let mut max: Option<Bound> = None;
-    let mut order_enum = Order::Ascending;
-    let mut min: Option<Bound> = None;
-    let mut max: Option<Bound> = None;
-    if let Some(num) = order {
-        if num == 2 {
-            order_enum = Order::Descending;
-        }
-    }
-    let offset_value = offset
-        .as_ref()
-        .map(|offset| Bound::Exclusive(offset.to_be_bytes().to_vec()));
-
-    // if there is offset, assign to min or max
-    match order_enum {
-        Order::Ascending => min = offset_value,
-        Order::Descending => max = offset_value,
-    }
-
-    (limit, min, max, order_enum)
-}
-
 pub fn query_executors_by_index(
     deps: Deps,
     offset: Option<u64>,
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<Executor>> {
-    let (limit, min, max, order_enum) = get_executors_by_index_params(offset, limit, order);
+    let (limit, min, max, order_enum) = get_range_params(
+        offset.map(|v| v.to_be_bytes().to_vec().as_slice()),
+        limit,
+        order,
+    );
 
     let res: StdResult<Vec<Executor>> = executors_map()
         .idx
