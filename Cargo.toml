@@ -34,6 +34,7 @@ library = []
 cosmwasm-std = "1.1.6"
 cosmwasm-schema = "1.1.6"
 cw-storage-plus = "1.0.1"
+cosmwasm-storage = { version = "1.1.9" }
 cw2 = "1.0.1"
 thiserror = { version = "1.0.27" }
 hex = "0.4"

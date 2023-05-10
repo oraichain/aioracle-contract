@@ -1,6 +1,7 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Binary, Order};
+use cosmwasm_std::{Addr, Binary, Order, StdResult, Storage};
 
+use cosmwasm_storage::{singleton, singleton_read, Bucket, ReadonlyBucket};
 use cw_storage_plus::{
     Bound, Bounder, Index, IndexList, IndexedMap, Item, MultiIndex, UniqueIndex,
 };
@@ -10,8 +11,6 @@ pub struct Executor {
     /// Owner If None set, contract is frozen.
     pub pubkey: Binary,
     pub is_active: bool,
-    pub executing_power: u64,
-    pub index: u64,
     pub left_block: Option<u64>,
 }
 
@@ -34,14 +33,41 @@ pub struct Request {
     pub input: Option<Binary>,
 }
 
-pub const CONFIG_KEY: &str = "config";
-pub const CONFIG: Item<Config> = Item::new(CONFIG_KEY);
+pub fn config_save(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {
+    singleton(storage, KEY_CONFIG).save(config)
+}
 
-pub const LATEST_STAGE_KEY: &str = "stage";
-pub const LATEST_STAGE: Item<u64> = Item::new(LATEST_STAGE_KEY);
+pub fn config_update(
+    storage: &mut dyn Storage,
+    new_owner: Option<Addr>,
+    new_max_req_threshold: Option<u64>,
+) -> StdResult<Config> {
+    singleton(storage, KEY_CONFIG).update(|config: Config| {
+        if let Some(new_owner) = new_owner {
+            config.owner = new_owner;
+        }
+        if let Some(max_req_threshold) = new_max_req_threshold {
+            config.max_req_threshold = max_req_threshold;
+        }
+        Ok(config)
+    })
+}
 
-pub const EXECUTORS_INDEX_PREFIX: &str = "executors_index";
-pub const EXECUTORS_INDEX: Item<u64> = Item::new(EXECUTORS_INDEX_PREFIX);
+pub fn config_read(storage: &dyn Storage) -> StdResult<Config> {
+    singleton_read(storage, KEY_CONFIG).load()
+}
+
+pub fn latest_stage_read(storage: &dyn Storage) -> StdResult<u64> {
+    singleton_read(storage, KEY_LATEST_STAGE).load()
+}
+
+pub fn latest_stage_save(storage: &mut dyn Storage, latest_stage: &u64) -> StdResult<()> {
+    singleton(storage, KEY_LATEST_STAGE).save(latest_stage)
+}
+
+pub fn latest_stage_update(storage: &mut dyn Storage) -> StdResult<u64> {
+    singleton(storage, KEY_LATEST_STAGE).update(|latest_stage: u64| Ok(latest_stage + 1))
+}
 
 // indexes requests
 // for structures
@@ -144,3 +170,6 @@ pub fn get_range_params<'a>(
 
     (limit, min, max, order_enum)
 }
+
+pub static KEY_CONFIG: &[u8] = b"config";
+pub static KEY_LATEST_STAGE: &[u8] = b"latest_stage";

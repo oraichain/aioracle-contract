@@ -1,6 +1,6 @@
 use cosmwasm_std::{Binary, Deps, Order, StdResult, Storage};
 
-use crate::state::{executors_map, get_range_params, Executor, EXECUTORS_INDEX};
+use crate::state::{executors_map, get_range_params, Executor};
 
 pub fn save_executors(storage: &mut dyn Storage, executors: Vec<Executor>) -> StdResult<()> {
     for executor in executors {
@@ -29,7 +29,6 @@ pub fn remove_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> St
 }
 
 pub fn update_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> StdResult<()> {
-    let mut executor_index = EXECUTORS_INDEX.load(storage)?;
     let final_executors = executors
         .into_iter()
         .map(|executor| -> Executor {
@@ -46,16 +45,12 @@ pub fn update_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> St
             // otherwise, we return new executor data
             let final_executor: Executor = Executor {
                 pubkey: executor,
-                executing_power: 0u64,
-                index: executor_index,
                 is_active: true,
                 left_block: None,
             };
-            executor_index += 1;
             final_executor
         })
         .collect();
-    EXECUTORS_INDEX.save(storage, &executor_index)?;
     save_executors(storage, final_executors)?;
     Ok(())
 }

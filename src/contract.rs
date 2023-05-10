@@ -20,7 +20,8 @@ use crate::msg::{
     UpdateConfigMsg,
 };
 use crate::state::{
-    get_range_params, requests, Config, Request, CONFIG, EXECUTORS_INDEX, LATEST_STAGE,
+    config_read, config_save, config_update, get_range_params, latest_stage_read,
+    latest_stage_save, latest_stage_update, requests, Config, Request,
 };
 pub const MAXIMUM_REQ_THRESHOLD: u64 = 67;
 // version info for migration info
@@ -39,15 +40,14 @@ pub fn init(
         owner,
         max_req_threshold: MAXIMUM_REQ_THRESHOLD,
     };
-    CONFIG.save(deps.storage, &config)?;
+    config_save(deps.storage, &config)?;
 
     let stage = 0;
-    LATEST_STAGE.save(deps.storage, &stage)?;
+    latest_stage_save(deps.storage, &stage)?;
 
     // first nonce
     let mut executor_index = 0;
     save_executors(deps.storage, vec![])?;
-    EXECUTORS_INDEX.save(deps.storage, &executor_index)?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::default())
 }
@@ -95,10 +95,6 @@ pub fn migrate(
     _info: MessageInfo,
     _msg: MigrateMsg,
 ) -> StdResult<Response> {
-    // migrate_v02_to_v03(deps.storage)?;
-    let executor_index = EXECUTORS_INDEX.load(deps.storage)?;
-    EXECUTORS_INDEX.save(deps.storage, &(executor_index + 1))?;
-
     // once we have "migrated", set the new version and return success
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::new().add_attributes(vec![
@@ -122,22 +118,14 @@ pub fn execute_update_config(
         new_checkpoint_threshold,
         new_max_req_threshold,
     } = update_config_msg;
-    let cfg = CONFIG.load(deps.storage)?;
+    let cfg = config_read(deps.storage)?;
     let owner = cfg.owner;
     if info.sender != owner {
         return Err(ContractError::Unauthorized {});
     }
 
     // if owner some validated to addr, otherwise set to none
-    CONFIG.update(deps.storage, |mut exists| -> StdResult<_> {
-        if let Some(new_owner) = new_owner {
-            exists.owner = new_owner;
-        }
-        if let Some(max_req_threshold) = new_max_req_threshold {
-            exists.max_req_threshold = max_req_threshold;
-        }
-        Ok(exists)
-    })?;
+    config_update(deps.storage, new_owner, new_max_req_threshold)?;
 
     if let Some(executors) = new_executors {
         update_executors(deps.storage, executors)?;
@@ -158,10 +146,10 @@ pub fn handle_request(
     threshold: u64,
     preference_executor_fee: Coin,
 ) -> Result<Response, ContractError> {
-    let stage = LATEST_STAGE.update(deps.storage, |stage| -> StdResult<_> { Ok(stage + 1) })?;
+    let stage = latest_stage_update(deps.storage)?;
     let Config {
         max_req_threshold, ..
-    } = CONFIG.load(deps.storage)?;
+    } = config_read(deps.storage)?;
 
     // this will keep track of the executor list of the request
     let current_size = query_executor_size(deps.as_ref())?;
@@ -206,11 +194,7 @@ pub fn execute_register_merkle_root(
     mroot: String,
     executors: Vec<String>,
 ) -> Result<Response, ContractError> {
-    let Config {
-        owner,
-        checkpoint_threshold,
-        ..
-    } = CONFIG.load(deps.storage)?;
+    let Config { owner, .. } = config_read(deps.storage)?;
 
     // if owner set validate, otherwise unauthorized
     if info.sender != owner {
@@ -343,8 +327,7 @@ pub fn verify_data(
 }
 
 pub fn query_config(deps: Deps) -> StdResult<Config> {
-    let cfg = CONFIG.load(deps.storage)?;
-    Ok(cfg)
+    config_read(deps.storage)
 }
 
 // ============================== Query Handlers ==============================
@@ -430,7 +413,7 @@ pub fn query_requests_by_merkle_root(
 }
 
 pub fn query_latest_stage(deps: Deps) -> StdResult<LatestStageResponse> {
-    let latest_stage = LATEST_STAGE.load(deps.storage)?;
+    let latest_stage = latest_stage_read(deps.storage)?;
     let resp = LatestStageResponse { latest_stage };
 
     Ok(resp)
