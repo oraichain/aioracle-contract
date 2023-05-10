@@ -28,7 +28,8 @@ pub const MAXIMUM_REQ_THRESHOLD: u64 = 67;
 const CONTRACT_NAME: &str = "crates.io:aioracle-v2";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub fn init(
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn instantiate(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
@@ -46,14 +47,14 @@ pub fn init(
     latest_stage_save(deps.storage, &stage)?;
 
     // first nonce
-    let mut executor_index = 0;
+    // let mut executor_index = 0;
     save_executors(deps.storage, vec![])?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::default())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn handle(
+pub fn execute(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
@@ -89,12 +90,7 @@ pub fn handle(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(
-    deps: DepsMut,
-    _env: Env,
-    _info: MessageInfo,
-    _msg: MigrateMsg,
-) -> StdResult<Response> {
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
     // once we have "migrated", set the new version and return success
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::new().add_attributes(vec![
@@ -114,9 +110,8 @@ pub fn execute_update_config(
         new_owner,
         new_executors,
         old_executors,
-        new_checkpoint,
-        new_checkpoint_threshold,
         new_max_req_threshold,
+        ..
     } = update_config_msg;
     let cfg = config_read(deps.storage)?;
     let owner = cfg.owner;
@@ -144,7 +139,7 @@ pub fn handle_request(
     service: String,
     input: Option<Binary>,
     threshold: u64,
-    preference_executor_fee: Coin,
+    _preference_executor_fee: Coin,
 ) -> Result<Response, ContractError> {
     let stage = latest_stage_update(deps.storage)?;
     let Config {
@@ -166,7 +161,7 @@ pub fn handle_request(
 
     requests().save(
         deps.storage,
-        &stage.to_be_bytes(),
+        stage,
         &crate::state::Request {
             requester: info.sender.clone(),
             request_height: env.block.height,
@@ -210,13 +205,13 @@ pub fn execute_register_merkle_root(
     let mut root_buf: [u8; 32] = [0; 32];
     hex::decode_to_slice(mroot.to_string(), &mut root_buf)?;
 
-    let Request { merkle_root, .. } = requests().load(deps.storage, &stage.to_be_bytes())?;
+    let Request { merkle_root, .. } = requests().load(deps.storage, stage)?;
     if merkle_root.ne("") {
         return Err(ContractError::AlreadyFinished {});
     }
 
     // if merkle root empty then update new
-    let request = requests().update(deps.storage, &stage.to_be_bytes(), |request| {
+    requests().update(deps.storage, stage, |request| {
         if let Some(mut request) = request {
             request.merkle_root = mroot.clone();
             request.submit_merkle_height = env.block.height;
@@ -234,7 +229,8 @@ pub fn execute_register_merkle_root(
     ]))
 }
 
-pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
         QueryMsg::GetExecutors {
@@ -288,7 +284,7 @@ pub fn verify_data(
     data: Binary,
     proofs: Option<Vec<String>>,
 ) -> StdResult<bool> {
-    let Request { merkle_root, .. } = requests().load(deps.storage, &stage.to_be_bytes())?;
+    let Request { merkle_root, .. } = requests().load(deps.storage, stage)?;
     if merkle_root.is_empty() {
         return Err(StdError::generic_err(
             "No merkle root found for this request",
@@ -333,18 +329,13 @@ pub fn query_config(deps: Deps) -> StdResult<Config> {
 // ============================== Query Handlers ==============================
 
 pub fn query_request(deps: Deps, stage: u64) -> StdResult<Request> {
-    let request = requests().load(deps.storage, &stage.to_be_bytes())?;
+    let request = requests().load(deps.storage, stage)?;
     Ok(request)
 }
 
-fn parse_request<'a>(item: StdResult<KV<Request>>) -> StdResult<RequestResponse> {
-    item.and_then(|(k, request)| {
+fn parse_request<'a>(item: StdResult<(u64, Request)>) -> StdResult<RequestResponse> {
+    item.and_then(|(id, request)| {
         // will panic if length is greater than 8, but we can make sure it is u64
-        // try_into will box vector to fixed array
-        let value = k
-            .try_into()
-            .map_err(|_| StdError::generic_err("Cannot parse offering key"))?;
-        let id: u64 = u64::from_be_bytes(value);
         Ok(RequestResponse {
             stage: id,
             requester: request.requester,
@@ -363,7 +354,7 @@ pub fn query_requests(
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<RequestResponse>> {
-    let (limit, min, max, order_enum) = get_range_params(limit, offset, order);
+    let (limit, min, max, order_enum) = get_range_params(offset, limit, order);
     let requests: StdResult<Vec<RequestResponse>> = requests()
         .range(deps.storage, min, max, order_enum)
         .take(limit)
@@ -379,15 +370,12 @@ pub fn query_requests_by_service(
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<RequestResponse>> {
-    let (limit, min, max, order_enum) = get_range_params(
-        offset.map(|v| v.to_be_bytes().to_vec().as_slice()),
-        limit,
-        order,
-    );
+    let (limit, min, max, order_enum) = get_range_params(offset, limit, order);
     let request_responses: StdResult<Vec<RequestResponse>> = requests()
         .idx
         .service
-        .items(deps.storage, service.as_bytes(), min, max, order_enum)
+        .prefix(service.as_bytes().to_vec())
+        .range(deps.storage, min, max, order_enum)
         .take(limit)
         .map(|kv_item| parse_request(kv_item))
         .collect();
@@ -401,11 +389,12 @@ pub fn query_requests_by_merkle_root(
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<RequestResponse>> {
-    let (limit, min, max, order_enum) = get_range_params(limit, offset, order);
+    let (limit, min, max, order_enum) = get_range_params(offset, limit, order);
     let request_responses: StdResult<Vec<RequestResponse>> = requests()
         .idx
         .merkle_root
-        .items(deps.storage, merkle_root.as_bytes(), min, max, order_enum)
+        .prefix(merkle_root.as_bytes().to_vec())
+        .range(deps.storage, min, max, order_enum)
         .take(limit)
         .map(|kv_item| parse_request(kv_item))
         .collect();

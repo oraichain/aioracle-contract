@@ -1,10 +1,8 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Binary, Order, StdResult, Storage};
 
-use cosmwasm_storage::{singleton, singleton_read, Bucket, ReadonlyBucket};
-use cw_storage_plus::{
-    Bound, Bounder, Index, IndexList, IndexedMap, Item, MultiIndex, UniqueIndex,
-};
+use cosmwasm_storage::{singleton, singleton_read};
+use cw_storage_plus::{Bound, Bounder, Index, IndexList, IndexedMap, MultiIndex, UniqueIndex};
 
 #[cw_serde]
 pub struct Executor {
@@ -42,15 +40,21 @@ pub fn config_update(
     new_owner: Option<Addr>,
     new_max_req_threshold: Option<u64>,
 ) -> StdResult<Config> {
-    singleton(storage, KEY_CONFIG).update(|config: Config| {
-        if let Some(new_owner) = new_owner {
-            config.owner = new_owner;
-        }
-        if let Some(max_req_threshold) = new_max_req_threshold {
-            config.max_req_threshold = max_req_threshold;
-        }
-        Ok(config)
-    })
+    let mut config = config_read(storage)?;
+    let mut need_update = false;
+
+    if let Some(new_owner) = new_owner {
+        config.owner = new_owner;
+        need_update = true;
+    }
+    if let Some(max_req_threshold) = new_max_req_threshold {
+        config.max_req_threshold = max_req_threshold;
+        need_update = true;
+    }
+    if need_update {
+        config_save(storage, &config)?;
+    }
+    Ok(config)
 }
 
 pub fn config_read(storage: &dyn Storage) -> StdResult<Config> {
@@ -72,9 +76,9 @@ pub fn latest_stage_update(storage: &mut dyn Storage) -> StdResult<u64> {
 // indexes requests
 // for structures
 pub struct RequestIndexes<'a> {
-    pub service: MultiIndex<'a, &'a [u8], Request, u64>,
-    pub merkle_root: MultiIndex<'a, &'a [u8], Request, u64>,
-    pub requester: MultiIndex<'a, &'a [u8], Request, u64>,
+    pub service: MultiIndex<'a, Vec<u8>, Request, u64>,
+    pub merkle_root: MultiIndex<'a, Vec<u8>, Request, u64>,
+    pub requester: MultiIndex<'a, Vec<u8>, Request, u64>,
 }
 
 impl<'a> IndexList<Request> for RequestIndexes<'a> {
@@ -85,20 +89,20 @@ impl<'a> IndexList<Request> for RequestIndexes<'a> {
 }
 
 // this IndexedMap instance has a lifetime
-pub fn requests<'a>() -> IndexedMap<'a, &'a [u8], Request, RequestIndexes<'a>> {
+pub fn requests<'a>() -> IndexedMap<'a, u64, Request, RequestIndexes<'a>> {
     let indexes = RequestIndexes {
         service: MultiIndex::new(
-            |_pk, d| d.service.as_bytes(),
+            |_pk, d| d.service.as_bytes().to_vec(),
             "requests",
             "requests_service",
         ),
         merkle_root: MultiIndex::new(
-            |_pk, d| d.merkle_root.as_bytes(),
+            |_pk, d| d.merkle_root.as_bytes().to_vec(),
             "requests",
             "requests_merkle_root",
         ),
         requester: MultiIndex::new(
-            |_pk, d| d.requester.as_bytes(),
+            |_pk, d| d.requester.as_bytes().to_vec(),
             "requests",
             "requests_requester",
         ),
@@ -109,8 +113,8 @@ pub fn requests<'a>() -> IndexedMap<'a, &'a [u8], Request, RequestIndexes<'a>> {
 // index for executors
 
 pub struct ExecutorIndexes<'a> {
-    pub is_active: MultiIndex<'a, &'a [u8], Executor, u64>,
-    pub index: UniqueIndex<'a, &'a [u8], Executor>,
+    pub is_active: MultiIndex<'a, Vec<u8>, Executor, u64>,
+    pub index: UniqueIndex<'a, Vec<u8>, Executor>,
 }
 
 impl<'a> IndexList<Executor> for ExecutorIndexes<'a> {
@@ -121,14 +125,14 @@ impl<'a> IndexList<Executor> for ExecutorIndexes<'a> {
 }
 
 // this IndexedMap instance has a lifetime
-pub fn executors_map<'a>() -> IndexedMap<'a, &'a [u8], Executor, ExecutorIndexes<'a>> {
+pub fn executors_map<'a>() -> IndexedMap<'a, Vec<u8>, Executor, ExecutorIndexes<'a>> {
     let indexes = ExecutorIndexes {
         is_active: MultiIndex::new(
-            |_pk, d| if d.is_active { &[1u8] } else { &[0u8] },
+            |_pk, d| if d.is_active { vec![1u8] } else { vec![0u8] },
             "executors",
             "executors_is_active",
         ),
-        index: UniqueIndex::new(|d| &d.index.to_be_bytes(), "index"),
+        index: UniqueIndex::new(|d| d.pubkey.to_vec(), "index"),
     };
     IndexedMap::new("executors", indexes)
 }
@@ -137,16 +141,11 @@ pub fn executors_map<'a>() -> IndexedMap<'a, &'a [u8], Executor, ExecutorIndexes
 pub const MAX_LIMIT: u8 = 50;
 pub const DEFAULT_LIMIT: u8 = 20;
 
-pub fn get_range_params<'a>(
-    offset: Option<&[u8]>,
+pub fn get_range_params<'a, T: Bounder<'a>>(
+    offset: Option<T>,
     limit: Option<u8>,
     order: Option<u8>,
-) -> (
-    usize,
-    Option<Bound<'a, &'a [u8]>>,
-    Option<Bound<'a, &'a [u8]>>,
-    Order,
-) {
+) -> (usize, Option<Bound<'a, T>>, Option<Bound<'a, T>>, Order) {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     // let mut max: Option<Bound> = None;
     let mut order_enum = Order::Ascending;

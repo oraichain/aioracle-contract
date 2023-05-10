@@ -1,4 +1,4 @@
-use cosmwasm_schema::cw_serde;
+use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Binary, Coin};
 
 #[cw_serde]
@@ -38,43 +38,51 @@ pub enum ExecuteMsg {
 }
 
 #[cw_serde]
+#[derive(QueryResponses)]
 pub enum QueryMsg {
+    #[returns(crate::state::Config)]
     Config {},
+    #[returns(Vec<crate::state::Executor>)]
     GetExecutors {
         offset: Option<Binary>,
         limit: Option<u8>,
         order: Option<u8>,
     },
+    #[returns(Vec<crate::state::Executor>)]
     GetExecutorsByIndex {
         offset: Option<u64>,
         limit: Option<u8>,
         order: Option<u8>,
     },
-    GetExecutor {
-        pubkey: Binary,
-    },
+    #[returns(crate::state::Executor)]
+    GetExecutor { pubkey: Binary },
+    #[returns(u64)]
     GetExecutorSize {},
-    GetRequest {
-        stage: u64,
-    },
+    #[returns(RequestResponse)]
+    GetRequest { stage: u64 },
+    #[returns(Vec<RequestResponse>)]
     GetRequests {
         offset: Option<u64>,
         limit: Option<u8>,
         order: Option<u8>,
     },
+    #[returns(Vec<RequestResponse>)]
     GetRequestsByService {
         service: String,
         offset: Option<u64>,
         limit: Option<u8>,
         order: Option<u8>,
     },
+    #[returns(Vec<RequestResponse>)]
     GetRequestsByMerkleRoot {
         merkle_root: String,
         offset: Option<u64>,
         limit: Option<u8>,
         order: Option<u8>,
     },
+    #[returns(LatestStageResponse)]
     LatestStage {},
+    #[returns(bool)]
     VerifyData {
         stage: u64,
         data: Binary,

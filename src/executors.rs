@@ -4,18 +4,18 @@ use crate::state::{executors_map, get_range_params, Executor};
 
 pub fn save_executors(storage: &mut dyn Storage, executors: Vec<Executor>) -> StdResult<()> {
     for executor in executors {
-        executors_map().save(storage, executor.pubkey.as_slice(), &executor)?
+        executors_map().save(storage, executor.pubkey.to_vec(), &executor)?
     }
     Ok(())
 }
 
 pub fn remove_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> StdResult<()> {
     for executor in executors {
-        let executor_option = executors_map().may_load(storage, executor.as_slice())?;
+        let executor_option = executors_map().may_load(storage, executor.to_vec())?;
         if let Some(executor) = executor_option {
             executors_map().save(
                 storage,
-                executor.pubkey.clone().as_slice(),
+                executor.pubkey.clone().to_vec(),
                 &Executor {
                     is_active: false,
                     ..executor
@@ -33,7 +33,7 @@ pub fn update_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> St
         .into_iter()
         .map(|executor| -> Executor {
             let old_executor_option = executors_map()
-                .may_load(storage, executor.as_slice())
+                .may_load(storage, executor.to_vec())
                 .unwrap_or(None);
             // if executor exist then we dont increment executor index, reuse all config, only turn is active to true
             if let Some(old_executor) = old_executor_option {
@@ -58,16 +58,16 @@ pub fn update_executors(storage: &mut dyn Storage, executors: Vec<Binary>) -> St
 // query functions
 
 pub fn query_executor(deps: Deps, pubkey: Binary) -> StdResult<Executor> {
-    Ok(executors_map().load(deps.storage, pubkey.as_slice())?)
+    Ok(executors_map().load(deps.storage, pubkey.to_vec())?)
 }
 
 pub fn query_executors(
     deps: Deps,
-    offset: Option<&[u8]>,
+    offset: Option<Binary>,
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<Executor>> {
-    let (limit, min, max, order_enum) = get_range_params(offset, limit, order);
+    let (limit, min, max, order_enum) = get_range_params(offset.map(|o| o.to_vec()), limit, order);
 
     let res: StdResult<Vec<Executor>> = executors_map()
         .range(deps.storage, min, max, order_enum)
@@ -89,11 +89,8 @@ pub fn query_executors_by_index(
     limit: Option<u8>,
     order: Option<u8>,
 ) -> StdResult<Vec<Executor>> {
-    let (limit, min, max, order_enum) = get_range_params(
-        offset.map(|v| v.to_be_bytes().to_vec().as_slice()),
-        limit,
-        order,
-    );
+    let (limit, min, max, order_enum) =
+        get_range_params(offset.map(|v| v.to_be_bytes().to_vec()), limit, order);
 
     let res: StdResult<Vec<Executor>> = executors_map()
         .idx
