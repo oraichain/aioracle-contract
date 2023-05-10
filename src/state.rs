@@ -1,19 +1,16 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Binary, Coin, Order, Uint128};
+use cosmwasm_std::{Addr, Binary, Order, StdResult, Storage};
 
+use cosmwasm_storage::{singleton, singleton_read, Bucket, ReadonlyBucket};
 use cw_storage_plus::{
-    Bound, Bounder, Index, IndexList, IndexedMap, Item, Map, MultiIndex, UniqueIndex,
+    Bound, Bounder, Index, IndexList, IndexedMap, Item, MultiIndex, UniqueIndex,
 };
-
-pub type Reward = (Addr, String, Uint128);
 
 #[cw_serde]
 pub struct Executor {
     /// Owner If None set, contract is frozen.
     pub pubkey: Binary,
     pub is_active: bool,
-    pub executing_power: u64,
-    pub index: u64,
     pub left_block: Option<u64>,
 }
 
@@ -21,78 +18,56 @@ pub struct Executor {
 pub struct Config {
     /// Owner If None set, contract is frozen.
     pub owner: Addr,
-    pub service_addr: Addr,
-    pub contract_fee: Coin,
-    /// this threshold is to update the checkpoint stage when current previous checkpoint +
-    pub checkpoint_threshold: u64,
     pub max_req_threshold: u64,
-    pub trusting_period: u64,
-    pub slashing_amount: u64,
-    pub denom: String,
-    pub pending_period: u64,
-}
-
-#[cw_serde]
-#[serde(rename_all = "snake_case")]
-pub struct Contracts {
-    pub dsources: Vec<Addr>,
-    pub tcases: Vec<Addr>,
-    pub oscript: Addr,
 }
 
 #[cw_serde]
 pub struct Request {
     /// Owner If None set, contract is frozen.
     pub requester: Addr,
-    pub preference_executor_fee: Coin,
     pub request_height: u64,
     pub submit_merkle_height: u64,
     pub merkle_root: String,
     pub threshold: u64,
     pub service: String,
-    pub input: Option<String>,
-    pub rewards: Vec<Reward>,
+    pub input: Option<Binary>,
 }
 
-#[cw_serde]
-pub struct TrustingPool {
-    /// Owner If None set, contract is frozen.
-    pub amount_coin: Coin,
-    pub withdraw_amount_coin: Coin,
-    pub withdraw_height: u64,
+pub fn config_save(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {
+    singleton(storage, KEY_CONFIG).save(config)
 }
 
-pub const CONFIG_KEY: &str = "config_v3";
-pub const CONFIG: Item<Config> = Item::new(CONFIG_KEY);
+pub fn config_update(
+    storage: &mut dyn Storage,
+    new_owner: Option<Addr>,
+    new_max_req_threshold: Option<u64>,
+) -> StdResult<Config> {
+    singleton(storage, KEY_CONFIG).update(|config: Config| {
+        if let Some(new_owner) = new_owner {
+            config.owner = new_owner;
+        }
+        if let Some(max_req_threshold) = new_max_req_threshold {
+            config.max_req_threshold = max_req_threshold;
+        }
+        Ok(config)
+    })
+}
 
-pub const LATEST_STAGE_KEY: &str = "stage";
-pub const LATEST_STAGE: Item<u64> = Item::new(LATEST_STAGE_KEY);
+pub fn config_read(storage: &dyn Storage) -> StdResult<Config> {
+    singleton_read(storage, KEY_CONFIG).load()
+}
 
-pub const CHECKPOINT_STAGE_KEY: &str = "checkpoint";
-pub const CHECKPOINT: Item<u64> = Item::new(CHECKPOINT_STAGE_KEY);
+pub fn latest_stage_read(storage: &dyn Storage) -> StdResult<u64> {
+    singleton_read(storage, KEY_LATEST_STAGE).load()
+}
 
-pub const CLAIM_PREFIX: &str = "claim";
+pub fn latest_stage_save(storage: &mut dyn Storage, latest_stage: &u64) -> StdResult<()> {
+    singleton(storage, KEY_LATEST_STAGE).save(latest_stage)
+}
 
-// key: executor in base64 string + stage in string
-pub const CLAIM: Map<&[u8], bool> = Map::new(CLAIM_PREFIX);
-
-pub const EVIDENCE_PREFIX: &str = "evidence";
-
-// key: executor in base64 string + stage in string
-pub const EVIDENCES: Map<&[u8], bool> = Map::new(EVIDENCE_PREFIX);
-
-// pub const EXECUTORS_PREFIX: &str = "executors";
-// pub const EXECUTORS: Map<&[u8], bool> = Map::new(EXECUTORS_PREFIX);
-
-pub const EXECUTORS_INDEX_PREFIX: &str = "executors_index";
-pub const EXECUTORS_INDEX: Item<u64> = Item::new(EXECUTORS_INDEX_PREFIX);
-
-pub const CONTRACT_FEES_INDEX: &str = "contract_fees_index";
-pub const CONTRACT_FEES: Item<Coin> = Item::new(CONTRACT_FEES_INDEX);
-
-pub const EXECUTORS_TRUSTING_POOL_PREFIX: &str = "executors_trusting_pool_v2";
-pub const EXECUTORS_TRUSTING_POOL: Map<&[u8], TrustingPool> =
-    Map::new(EXECUTORS_TRUSTING_POOL_PREFIX);
+pub fn latest_stage_update(storage: &mut dyn Storage) -> StdResult<u64> {
+    singleton(storage, KEY_LATEST_STAGE).update(|latest_stage: u64| Ok(latest_stage + 1))
+}
 
 // indexes requests
 // for structures
@@ -195,3 +170,6 @@ pub fn get_range_params<'a>(
 
     (limit, min, max, order_enum)
 }
+
+pub static KEY_CONFIG: &[u8] = b"config";
+pub static KEY_LATEST_STAGE: &[u8] = b"latest_stage";
