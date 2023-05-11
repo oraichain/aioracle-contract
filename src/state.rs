@@ -113,7 +113,7 @@ pub fn requests<'a>() -> IndexedMap<'a, u64, Request, RequestIndexes<'a>> {
 // index for executors
 
 pub struct ExecutorIndexes<'a> {
-    pub is_active: MultiIndex<'a, Vec<u8>, Executor, u64>,
+    pub is_active: MultiIndex<'a, u8, Executor, u64>,
     pub index: UniqueIndex<'a, Vec<u8>, Executor>,
 }
 
@@ -128,7 +128,7 @@ impl<'a> IndexList<Executor> for ExecutorIndexes<'a> {
 pub fn executors_map<'a>() -> IndexedMap<'a, Vec<u8>, Executor, ExecutorIndexes<'a>> {
     let indexes = ExecutorIndexes {
         is_active: MultiIndex::new(
-            |_pk, d| if d.is_active { vec![1u8] } else { vec![0u8] },
+            |_pk, d| if d.is_active { 1u8 } else { 0u8 },
             "executors",
             "executors_is_active",
         ),
