@@ -1,7 +1,7 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Binary, Order, StdResult, Storage};
 
-use cosmwasm_storage::{singleton, singleton_read};
+use cosmwasm_storage::{singleton, singleton_read, Bucket, ReadonlyBucket};
 use cw_storage_plus::{Bound, Bounder, Index, IndexList, IndexedMap, MultiIndex, UniqueIndex};
 
 #[cw_serde]
@@ -29,6 +29,48 @@ pub struct Request {
     pub threshold: u64,
     pub service: String,
     pub input: Option<Binary>,
+}
+
+#[cw_serde]
+pub struct DataSourceState {
+    pub language: String,
+    pub script_url: String,
+    pub parameters: Vec<Binary>,
+}
+
+#[cw_serde]
+pub struct TestCaseState {
+    pub input: Binary,
+    pub expected_output: Binary,
+}
+
+#[cw_serde]
+pub struct Service {
+    pub dsources: Vec<DataSourceState>,
+    pub tcases: Vec<TestCaseState>,
+    pub oscript_url: String,
+}
+
+#[cw_serde]
+pub struct ServiceInfo {
+    pub owner: Addr,
+    pub service: Service,
+}
+
+pub fn store_service_info(
+    storage: &mut dyn Storage,
+    service_name: &[u8],
+    service_info: &ServiceInfo,
+) -> StdResult<()> {
+    Bucket::new(storage, PREFIX_SERVICE_INFO).save(service_name, service_info)
+}
+
+pub fn read_service_info(storage: &dyn Storage, service_name: &[u8]) -> StdResult<ServiceInfo> {
+    ReadonlyBucket::new(storage, PREFIX_SERVICE_INFO).load(service_name)
+}
+
+pub fn remove_service_info(storage: &mut dyn Storage, service_name: &[u8]) {
+    Bucket::<ServiceInfo>::new(storage, PREFIX_SERVICE_INFO).remove(service_name)
 }
 
 pub fn config_save(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {
@@ -172,3 +214,4 @@ pub fn get_range_params<'a, T: Bounder<'a>>(
 
 pub static KEY_CONFIG: &[u8] = b"config";
 pub static KEY_LATEST_STAGE: &[u8] = b"latest_stage";
+pub static PREFIX_SERVICE_INFO: &[u8] = b"service_info";

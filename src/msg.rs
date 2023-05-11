@@ -1,6 +1,8 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Binary, Coin};
 
+use crate::state::{DataSourceState, Service, TestCaseState};
+
 #[cw_serde]
 pub struct ServiceMsg {
     pub service: String,
@@ -35,6 +37,26 @@ pub enum ExecuteMsg {
         threshold: u64,
         preference_executor_fee: Coin,
     },
+    AddService(AddServiceMsg),
+    UpdateService(UpdateServiceMsg),
+    DeleteService {
+        service_name: String,
+    },
+}
+
+#[cw_serde]
+pub struct UpdateServiceMsg {
+    pub service_name: String,
+    pub new_owner: Option<String>,
+    pub dsources: Option<Vec<DataSourceState>>,
+    pub tcases: Option<Vec<TestCaseState>>,
+    pub oscript_url: Option<String>,
+}
+
+#[cw_serde]
+pub struct AddServiceMsg {
+    pub service_name: String,
+    pub service: Service,
 }
 
 #[cw_serde]

@@ -16,12 +16,13 @@ use crate::executors::{
 };
 
 use crate::msg::{
-    ExecuteMsg, InstantiateMsg, LatestStageResponse, MigrateMsg, QueryMsg, RequestResponse,
-    UpdateConfigMsg,
+    AddServiceMsg, ExecuteMsg, InstantiateMsg, LatestStageResponse, MigrateMsg, QueryMsg,
+    RequestResponse, UpdateConfigMsg, UpdateServiceMsg,
 };
 use crate::state::{
     config_read, config_save, config_update, get_range_params, latest_stage_read,
-    latest_stage_save, latest_stage_update, requests, Config, Request,
+    latest_stage_save, latest_stage_update, read_service_info, remove_service_info, requests,
+    store_service_info, Config, Request, ServiceInfo,
 };
 pub const MAXIMUM_REQ_THRESHOLD: u64 = 67;
 // version info for migration info
@@ -64,9 +65,6 @@ pub fn execute(
         ExecuteMsg::UpdateConfig { update_config_msg } => {
             execute_update_config(deps, env, info, update_config_msg)
         }
-        // ExecuteMsg::ToggleExecutorActiveness { pubkey } => {
-        //     toggle_executor_activeness(deps, info,, pubkey)
-        // }
         ExecuteMsg::RegisterMerkleRoot {
             stage,
             merkle_root,
@@ -86,6 +84,11 @@ pub fn execute(
             threshold,
             preference_executor_fee,
         ),
+        ExecuteMsg::AddService(service_msg) => handle_add_service(deps, info, service_msg),
+        ExecuteMsg::UpdateService(service_msg) => handle_update_service(deps, info, service_msg),
+        ExecuteMsg::DeleteService { service_name } => {
+            handle_delete_service(deps, info, service_name)
+        }
     }
 }
 
@@ -97,6 +100,85 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response
         attr("new_contract_name", CONTRACT_NAME),
         attr("new_contract_version", CONTRACT_VERSION),
     ]))
+}
+
+pub fn handle_add_service(
+    deps: DepsMut,
+    info: MessageInfo,
+    service_msg: AddServiceMsg,
+) -> Result<Response, ContractError> {
+    let service_info = read_service_info(deps.storage, service_msg.service_name.as_bytes()).ok();
+    if service_info.is_some() {
+        return Err(ContractError::Unauthorized {});
+    }
+    store_service_info(
+        deps.storage,
+        service_msg.service_name.as_bytes(),
+        &ServiceInfo {
+            owner: info.sender,
+            service: service_msg.service,
+        },
+    )?;
+    Ok(Response::new().add_attributes(vec![
+        attr("action", "add_service"),
+        attr("service_name", service_msg.service_name),
+    ]))
+}
+
+pub fn handle_update_service(
+    deps: DepsMut,
+    info: MessageInfo,
+    service_msg: UpdateServiceMsg,
+) -> Result<Response, ContractError> {
+    let service_info = read_service_info(deps.storage, service_msg.service_name.as_bytes()).ok();
+    if let Some(mut service_info) = service_info {
+        if service_info.owner.ne(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
+        if let Some(new_owner) = service_msg.new_owner {
+            service_info.owner = deps.api.addr_validate(&new_owner)?;
+        }
+        if let Some(dsources) = service_msg.dsources {
+            service_info.service.dsources = dsources;
+        }
+        if let Some(tcases) = service_msg.tcases {
+            service_info.service.tcases = tcases;
+        }
+        if let Some(oscript_url) = service_msg.oscript_url {
+            service_info.service.oscript_url = oscript_url;
+        }
+        store_service_info(
+            deps.storage,
+            service_msg.service_name.as_bytes(),
+            &service_info,
+        )?;
+        return Ok(Response::new().add_attributes(vec![
+            attr("action", "update_service"),
+            attr("service_name", service_msg.service_name),
+        ]));
+    }
+
+    Err(ContractError::ServiceNotFound {})
+}
+
+pub fn handle_delete_service(
+    deps: DepsMut,
+    info: MessageInfo,
+    service_name: String,
+) -> Result<Response, ContractError> {
+    let service_info = read_service_info(deps.storage, service_name.as_bytes()).ok();
+    if let Some(service_info) = service_info {
+        if service_info.owner.ne(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
+        remove_service_info(deps.storage, service_name.as_bytes());
+        return Ok(Response::new().add_attributes(vec![
+            attr("action", "delete_service"),
+            attr("service_name", service_name),
+        ]));
+    }
+
+    return Err(ContractError::Unauthorized {});
 }
 
 pub fn execute_update_config(
