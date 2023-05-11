@@ -1,6 +1,8 @@
 use cosmwasm_std::{CanonicalAddr, Deps, Order, StdResult, Storage};
 
-use crate::state::{executor_prefixes, remove_executor, store_executor, DEFAULT_LIMIT};
+use crate::state::{
+    executor_prefixes, match_order, remove_executor, store_executor, DEFAULT_LIMIT,
+};
 
 pub fn store_executors(storage: &mut dyn Storage, executors: Vec<CanonicalAddr>) {
     for executor in executors {
@@ -28,11 +30,7 @@ pub fn query_executors(
         .range(
             start.map(|start| String::into_bytes(start)).as_deref(),
             end.map(|start| String::into_bytes(start)).as_deref(),
-            match order {
-                Some(1) => Order::Ascending,
-                Some(2) => Order::Descending,
-                _ => Order::Descending,
-            },
+            match_order(order),
         )
         .take(limit.unwrap_or(DEFAULT_LIMIT) as usize)
         .map(|executor| {

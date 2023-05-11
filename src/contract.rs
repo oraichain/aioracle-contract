@@ -14,12 +14,12 @@ use crate::executors::{query_executor_size, query_executors, remove_executors, s
 
 use crate::msg::{
     AddServiceMsg, ExecuteMsg, InstantiateMsg, LatestStageResponse, MigrateMsg, QueryMsg,
-    RequestResponse, UpdateConfigMsg, UpdateServiceMsg,
+    RequestResponse, ServiceInfoResponse, UpdateConfigMsg, UpdateServiceMsg,
 };
 use crate::state::{
     config_read, config_save, config_update, get_range_params, latest_stage_read,
-    latest_stage_save, latest_stage_update, read_executor, read_service_info, remove_service_info,
-    requests, store_service_info, Config, Request, ServiceInfo,
+    latest_stage_save, latest_stage_update, read_executor, read_service_info, read_service_infos,
+    remove_service_info, requests, store_service_info, Config, Request, ServiceInfo,
 };
 pub const MAXIMUM_REQ_THRESHOLD: u64 = 67;
 // version info for migration info
@@ -375,6 +375,16 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::VerifyData { stage, data, proof } => {
             to_binary(&verify_data(deps, stage, data, proof)?)
         }
+        QueryMsg::GetService { service_name } => {
+            let service = read_service_info(deps.storage, service_name.as_bytes())?;
+            to_binary(&service)
+        }
+        QueryMsg::GetServices {
+            start,
+            end,
+            order,
+            limit,
+        } => to_binary(&query_services(deps, start, end, order, limit)?),
     }
 }
 
@@ -506,4 +516,20 @@ pub fn query_latest_stage(deps: Deps) -> StdResult<LatestStageResponse> {
     let resp = LatestStageResponse { latest_stage };
 
     Ok(resp)
+}
+
+pub fn query_services(
+    deps: Deps,
+    start: Option<String>,
+    end: Option<String>,
+    order: Option<u8>,
+    limit: Option<u8>,
+) -> StdResult<Vec<ServiceInfoResponse>> {
+    read_service_infos(
+        deps.storage,
+        start.map(|start| String::into_bytes(start)).as_deref(),
+        end.map(|end| String::into_bytes(end)).as_deref(),
+        order,
+        limit,
+    )
 }

@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Binary, Coin};
 
-use crate::state::{DataSourceState, Service, TestCaseState};
+use crate::state::{DataSourceState, Service, ServiceInfo, TestCaseState};
 
 #[cw_serde]
 pub struct ServiceMsg {
@@ -11,6 +11,12 @@ pub struct ServiceMsg {
 #[cw_serde]
 pub struct ServiceFeesMsg {
     pub addr: Addr,
+}
+
+#[cw_serde]
+pub struct ServiceInfoResponse {
+    pub service_name: String,
+    pub service_info: ServiceInfo,
 }
 
 #[cw_serde]
@@ -104,6 +110,15 @@ pub enum QueryMsg {
         stage: u64,
         data: Binary,
         proof: Option<Vec<String>>,
+    },
+    #[returns(ServiceInfo)]
+    GetService { service_name: String },
+    #[returns(Vec<ServiceInfoResponse>)]
+    GetServices {
+        start: Option<String>, // ordered by keys, so we pass in executor addresses
+        end: Option<String>,
+        order: Option<u8>,
+        limit: Option<u8>,
     },
 }
 

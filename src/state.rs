@@ -2,7 +2,9 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Binary, CanonicalAddr, Order, StdResult, Storage};
 
 use cosmwasm_storage::{bucket, bucket_read, prefixed, prefixed_read, singleton, singleton_read};
-use cw_storage_plus::{Bound, Bounder, Index, IndexList, IndexedMap, MultiIndex};
+use cw_storage_plus::{Bound, Bounder, Index, IndexList, IndexedMap, KeyDeserialize, MultiIndex};
+
+use crate::msg::ServiceInfoResponse;
 
 #[cw_serde]
 pub struct Config {
@@ -63,6 +65,26 @@ pub fn read_service_info(storage: &dyn Storage, service_name: &[u8]) -> StdResul
 
 pub fn remove_service_info(storage: &mut dyn Storage, service_name: &[u8]) {
     bucket::<ServiceInfo>(storage, PREFIX_SERVICE_INFO).remove(service_name)
+}
+
+pub fn read_service_infos(
+    storage: &dyn Storage,
+    start: Option<&[u8]>,
+    end: Option<&[u8]>,
+    order: Option<u8>,
+    limit: Option<u8>,
+) -> StdResult<Vec<ServiceInfoResponse>> {
+    bucket_read(storage, PREFIX_SERVICE_INFO)
+        .range(start, end, match_order(order))
+        .take(limit.unwrap_or(DEFAULT_LIMIT) as usize)
+        .map(|service_result: StdResult<(Vec<u8>, ServiceInfo)>| {
+            let service = service_result?;
+            Ok(ServiceInfoResponse {
+                service_name: String::from_vec(service.0)?,
+                service_info: service.1,
+            })
+        })
+        .collect()
 }
 
 pub fn config_save(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {
@@ -191,6 +213,14 @@ pub fn get_range_params<'a, T: Bounder<'a>>(
     }
 
     (limit, min, max, order_enum)
+}
+
+pub fn match_order(order: Option<u8>) -> Order {
+    match order {
+        Some(1) => Order::Ascending,
+        Some(2) => Order::Descending,
+        _ => Order::Descending,
+    }
 }
 
 pub static KEY_CONFIG: &[u8] = b"config";
