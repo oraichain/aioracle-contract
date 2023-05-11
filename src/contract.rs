@@ -454,6 +454,7 @@ fn parse_request<'a>(item: StdResult<(u64, Request)>) -> StdResult<RequestRespon
             merkle_root: request.merkle_root,
             threshold: request.threshold,
             service: request.service,
+            input: request.input,
         })
     })
 }

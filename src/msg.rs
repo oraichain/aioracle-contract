@@ -144,6 +144,7 @@ pub struct RequestResponse {
     pub merkle_root: String,
     pub threshold: u64,
     pub service: String,
+    pub input: Option<Binary>,
 }
 
 #[cw_serde]
