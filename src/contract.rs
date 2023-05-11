@@ -46,7 +46,17 @@ pub fn instantiate(
 
     // first nonce
     // let mut executor_index = 0;
-    store_executors(deps.storage, vec![]);
+    if let Some(executors) = msg.executors {
+        store_executors(
+            deps.storage,
+            executors
+                .into_iter()
+                .map(|ex| Ok(deps.api.addr_canonicalize(&ex)?))
+                .collect::<StdResult<Vec<CanonicalAddr>>>()?,
+        );
+    } else {
+        store_executors(deps.storage, vec![])
+    }
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::default())
 }

@@ -17,7 +17,7 @@ pub struct ServiceFeesMsg {
 pub struct InstantiateMsg {
     /// Owner if none set to info.sender.
     pub owner: Option<Addr>,
-    pub executors: Option<Vec<Binary>>,
+    pub executors: Option<Vec<String>>,
 }
 
 #[cw_serde]
@@ -64,7 +64,7 @@ pub struct AddServiceMsg {
 pub enum QueryMsg {
     #[returns(crate::state::Config)]
     Config {},
-    #[returns(String)]
+    #[returns(Vec<String>)]
     GetExecutors {
         start: Option<String>, // ordered by keys, so we pass in executor addresses
         end: Option<String>,

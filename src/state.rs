@@ -70,7 +70,7 @@ pub fn config_save(storage: &mut dyn Storage, config: &Config) -> StdResult<()> 
 }
 
 pub fn store_executor(storage: &mut dyn Storage, executor: CanonicalAddr) {
-    prefixed(storage, PREFIX_EXECUTOR).set(executor.as_slice(), &[])
+    prefixed(storage, PREFIX_EXECUTOR).set(executor.as_slice(), &[0])
 }
 
 pub fn read_executor(storage: &dyn Storage, executor: CanonicalAddr) -> Option<Vec<u8>> {
