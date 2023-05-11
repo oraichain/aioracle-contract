@@ -1,16 +1,8 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Binary, Order, StdResult, Storage};
+use cosmwasm_std::{Addr, Binary, CanonicalAddr, Order, StdResult, Storage};
 
-use cosmwasm_storage::{singleton, singleton_read, Bucket, ReadonlyBucket};
-use cw_storage_plus::{Bound, Bounder, Index, IndexList, IndexedMap, MultiIndex, UniqueIndex};
-
-#[cw_serde]
-pub struct Executor {
-    /// Owner If None set, contract is frozen.
-    pub pubkey: Binary,
-    pub is_active: bool,
-    pub left_block: Option<u64>,
-}
+use cosmwasm_storage::{bucket, bucket_read, prefixed, prefixed_read, singleton, singleton_read};
+use cw_storage_plus::{Bound, Bounder, Index, IndexList, IndexedMap, MultiIndex};
 
 #[cw_serde]
 pub struct Config {
@@ -62,19 +54,35 @@ pub fn store_service_info(
     service_name: &[u8],
     service_info: &ServiceInfo,
 ) -> StdResult<()> {
-    Bucket::new(storage, PREFIX_SERVICE_INFO).save(service_name, service_info)
+    bucket(storage, PREFIX_SERVICE_INFO).save(service_name, service_info)
 }
 
 pub fn read_service_info(storage: &dyn Storage, service_name: &[u8]) -> StdResult<ServiceInfo> {
-    ReadonlyBucket::new(storage, PREFIX_SERVICE_INFO).load(service_name)
+    bucket_read(storage, PREFIX_SERVICE_INFO).load(service_name)
 }
 
 pub fn remove_service_info(storage: &mut dyn Storage, service_name: &[u8]) {
-    Bucket::<ServiceInfo>::new(storage, PREFIX_SERVICE_INFO).remove(service_name)
+    bucket::<ServiceInfo>(storage, PREFIX_SERVICE_INFO).remove(service_name)
 }
 
 pub fn config_save(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {
     singleton(storage, KEY_CONFIG).save(config)
+}
+
+pub fn store_executor(storage: &mut dyn Storage, executor: CanonicalAddr) {
+    prefixed(storage, PREFIX_EXECUTOR).set(executor.as_slice(), &[])
+}
+
+pub fn read_executor(storage: &dyn Storage, executor: CanonicalAddr) -> Option<Vec<u8>> {
+    prefixed_read(storage, PREFIX_EXECUTOR).get(executor.as_slice())
+}
+
+pub fn executor_prefixes(storage: &dyn Storage) -> cosmwasm_storage::ReadonlyPrefixedStorage {
+    prefixed_read(storage, PREFIX_EXECUTOR)
+}
+
+pub fn remove_executor(storage: &mut dyn Storage, executor: CanonicalAddr) {
+    prefixed(storage, PREFIX_EXECUTOR).remove(executor.as_slice())
 }
 
 pub fn config_update(
@@ -152,33 +160,6 @@ pub fn requests<'a>() -> IndexedMap<'a, u64, Request, RequestIndexes<'a>> {
     IndexedMap::new("requests", indexes)
 }
 
-// index for executors
-
-pub struct ExecutorIndexes<'a> {
-    pub is_active: MultiIndex<'a, u8, Executor, u64>,
-    pub index: UniqueIndex<'a, Vec<u8>, Executor>,
-}
-
-impl<'a> IndexList<Executor> for ExecutorIndexes<'a> {
-    fn get_indexes(&'_ self) -> Box<dyn Iterator<Item = &'_ dyn Index<Executor>> + '_> {
-        let v: Vec<&dyn Index<Executor>> = vec![&self.is_active, &self.index];
-        Box::new(v.into_iter())
-    }
-}
-
-// this IndexedMap instance has a lifetime
-pub fn executors_map<'a>() -> IndexedMap<'a, Vec<u8>, Executor, ExecutorIndexes<'a>> {
-    let indexes = ExecutorIndexes {
-        is_active: MultiIndex::new(
-            |_pk, d| if d.is_active { 1u8 } else { 0u8 },
-            "executors",
-            "executors_is_active",
-        ),
-        index: UniqueIndex::new(|d| d.pubkey.to_vec(), "index"),
-    };
-    IndexedMap::new("executors", indexes)
-}
-
 // settings for pagination
 pub const MAX_LIMIT: u8 = 50;
 pub const DEFAULT_LIMIT: u8 = 20;
@@ -215,3 +196,4 @@ pub fn get_range_params<'a, T: Bounder<'a>>(
 pub static KEY_CONFIG: &[u8] = b"config";
 pub static KEY_LATEST_STAGE: &[u8] = b"latest_stage";
 pub static PREFIX_SERVICE_INFO: &[u8] = b"service_info";
+pub static PREFIX_EXECUTOR: &[u8] = b"executor";

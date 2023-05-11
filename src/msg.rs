@@ -64,20 +64,15 @@ pub struct AddServiceMsg {
 pub enum QueryMsg {
     #[returns(crate::state::Config)]
     Config {},
-    #[returns(Vec<crate::state::Executor>)]
+    #[returns(String)]
     GetExecutors {
-        offset: Option<Binary>,
-        limit: Option<u8>,
+        start: Option<String>, // ordered by keys, so we pass in executor addresses
+        end: Option<String>,
         order: Option<u8>,
-    },
-    #[returns(Vec<crate::state::Executor>)]
-    GetExecutorsByIndex {
-        offset: Option<u64>,
         limit: Option<u8>,
-        order: Option<u8>,
     },
-    #[returns(crate::state::Executor)]
-    GetExecutor { pubkey: Binary },
+    #[returns(bool)]
+    CheckExecutorInList { address: String },
     #[returns(u64)]
     GetExecutorSize {},
     #[returns(RequestResponse)]
@@ -147,8 +142,8 @@ pub struct MigrateMsg {}
 #[cw_serde]
 pub struct UpdateConfigMsg {
     pub new_owner: Option<Addr>,
-    pub new_executors: Option<Vec<Binary>>,
-    pub old_executors: Option<Vec<Binary>>,
+    pub new_executors: Option<Vec<String>>,
+    pub old_executors: Option<Vec<String>>,
     pub new_checkpoint: Option<u64>,
     pub new_checkpoint_threshold: Option<u64>,
     pub new_max_req_threshold: Option<u64>,

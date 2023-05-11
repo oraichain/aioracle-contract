@@ -1,6 +1,6 @@
 use cosmwasm_std::{
-    attr, entry_point, to_binary, Binary, Coin, Decimal, Deps, DepsMut, Env, MessageInfo, Response,
-    StdError, StdResult, Uint128,
+    attr, entry_point, to_binary, Binary, CanonicalAddr, Coin, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Response, StdError, StdResult, Uint128,
 };
 
 use cw2::set_contract_version;
@@ -10,10 +10,7 @@ use std::convert::TryInto;
 use std::ops::Mul;
 
 use crate::error::ContractError;
-use crate::executors::{
-    query_executor, query_executor_size, query_executors, query_executors_by_index,
-    remove_executors, save_executors, update_executors,
-};
+use crate::executors::{query_executor_size, query_executors, remove_executors, store_executors};
 
 use crate::msg::{
     AddServiceMsg, ExecuteMsg, InstantiateMsg, LatestStageResponse, MigrateMsg, QueryMsg,
@@ -21,8 +18,8 @@ use crate::msg::{
 };
 use crate::state::{
     config_read, config_save, config_update, get_range_params, latest_stage_read,
-    latest_stage_save, latest_stage_update, read_service_info, remove_service_info, requests,
-    store_service_info, Config, Request, ServiceInfo,
+    latest_stage_save, latest_stage_update, read_executor, read_service_info, remove_service_info,
+    requests, store_service_info, Config, Request, ServiceInfo,
 };
 pub const MAXIMUM_REQ_THRESHOLD: u64 = 67;
 // version info for migration info
@@ -49,7 +46,7 @@ pub fn instantiate(
 
     // first nonce
     // let mut executor_index = 0;
-    save_executors(deps.storage, vec![])?;
+    store_executors(deps.storage, vec![]);
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::default())
 }
@@ -205,10 +202,22 @@ pub fn execute_update_config(
     config_update(deps.storage, new_owner, new_max_req_threshold)?;
 
     if let Some(executors) = new_executors {
-        update_executors(deps.storage, executors)?;
+        store_executors(
+            deps.storage,
+            executors
+                .into_iter()
+                .map(|executor| deps.api.addr_canonicalize(&executor))
+                .collect::<StdResult<Vec<CanonicalAddr>>>()?,
+        );
     }
     if let Some(executors) = old_executors {
-        remove_executors(deps.storage, executors)?;
+        remove_executors(
+            deps.storage,
+            executors
+                .into_iter()
+                .map(|executor| deps.api.addr_canonicalize(&executor))
+                .collect::<StdResult<Vec<CanonicalAddr>>>()?,
+        );
     }
 
     Ok(Response::new().add_attributes(vec![attr("action", "update_config")]))
@@ -229,7 +238,7 @@ pub fn handle_request(
     } = config_read(deps.storage)?;
 
     // this will keep track of the executor list of the request
-    let current_size = query_executor_size(deps.as_ref())?;
+    let current_size = query_executor_size(deps.as_ref());
 
     if Uint128::from(current_size)
         .mul(Decimal::from_ratio(
@@ -316,17 +325,16 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
         QueryMsg::GetExecutors {
-            offset,
-            limit,
+            start,
+            end,
             order,
-        } => to_binary(&query_executors(deps, offset, limit, order)?),
-        QueryMsg::GetExecutorsByIndex {
-            offset,
             limit,
-            order,
-        } => to_binary(&query_executors_by_index(deps, offset, limit, order)?),
-        QueryMsg::GetExecutor { pubkey } => to_binary(&query_executor(deps, pubkey)?),
-        QueryMsg::GetExecutorSize {} => to_binary(&query_executor_size(deps)?),
+        } => to_binary(&query_executors(deps, start, end, order, limit)?),
+        QueryMsg::CheckExecutorInList { address } => {
+            let result = read_executor(deps.storage, deps.api.addr_canonicalize(&address)?);
+            to_binary(&result.is_some())
+        }
+        QueryMsg::GetExecutorSize {} => to_binary(&query_executor_size(deps)),
         QueryMsg::GetRequest { stage } => to_binary(&query_request(deps, stage)?),
         QueryMsg::GetRequests {
             offset,
