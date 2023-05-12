@@ -3,5 +3,5 @@
 ### Build contract
 
 ```sh
-cw-build .
+cwtools build .
 ```
