@@ -34,7 +34,7 @@ pub struct DataSourceState {
 
 #[cw_serde]
 pub struct TestCaseState {
-    pub input: Binary,
+    pub inputs: Vec<Binary>,
     pub expected_output: Binary,
 }
 
