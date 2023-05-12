@@ -81,16 +81,7 @@ pub fn execute(
             service,
             input,
             threshold,
-            preference_executor_fee,
-        } => handle_request(
-            deps,
-            info,
-            env,
-            service,
-            input,
-            threshold,
-            preference_executor_fee,
-        ),
+        } => handle_request(deps, info, env, service, input, threshold),
         ExecuteMsg::AddService(service_msg) => handle_add_service(deps, info, service_msg),
         ExecuteMsg::UpdateService(service_msg) => handle_update_service(deps, info, service_msg),
         ExecuteMsg::DeleteService { service_name } => {
@@ -240,7 +231,6 @@ pub fn handle_request(
     service: String,
     input: Option<Binary>,
     threshold: u64,
-    _preference_executor_fee: Coin,
 ) -> Result<Response, ContractError> {
     let stage = latest_stage_update(deps.storage)?;
     let Config {

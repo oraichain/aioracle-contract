@@ -41,7 +41,6 @@ pub enum ExecuteMsg {
         service: String,
         input: Option<Binary>,
         threshold: u64,
-        preference_executor_fee: Coin,
     },
     AddService(AddServiceMsg),
     UpdateService(UpdateServiceMsg),
