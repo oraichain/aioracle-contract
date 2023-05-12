@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Binary, Coin};
+use cosmwasm_std::{Addr, Binary};
 
 use crate::state::{DataSourceState, Service, ServiceInfo, TestCaseState};
 
@@ -39,7 +39,7 @@ pub enum ExecuteMsg {
     },
     Request {
         service: String,
-        input: Option<Binary>,
+        input: Option<String>,
         threshold: u64,
     },
     AddService(AddServiceMsg),
@@ -143,7 +143,7 @@ pub struct RequestResponse {
     pub merkle_root: String,
     pub threshold: u64,
     pub service: String,
-    pub input: Option<Binary>,
+    pub input: Option<String>,
 }
 
 #[cw_serde]

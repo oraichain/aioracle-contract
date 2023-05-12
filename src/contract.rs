@@ -1,6 +1,6 @@
 use cosmwasm_std::{
-    attr, entry_point, to_binary, Binary, CanonicalAddr, Coin, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Response, StdError, StdResult, Uint128,
+    attr, entry_point, to_binary, Binary, CanonicalAddr, Decimal, Deps, DepsMut, Env, MessageInfo,
+    Response, StdError, StdResult, Uint128,
 };
 
 use cw2::set_contract_version;
@@ -229,7 +229,7 @@ pub fn handle_request(
     info: MessageInfo,
     env: Env,
     service: String,
-    input: Option<Binary>,
+    input: Option<String>,
     threshold: u64,
 ) -> Result<Response, ContractError> {
     let stage = latest_stage_update(deps.storage)?;

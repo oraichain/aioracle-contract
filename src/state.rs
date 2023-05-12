@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Binary, CanonicalAddr, Order, StdResult, Storage};
+use cosmwasm_std::{Addr, CanonicalAddr, Order, StdResult, Storage};
 
 use cosmwasm_storage::{bucket, bucket_read, prefixed, prefixed_read, singleton, singleton_read};
 use cw_storage_plus::{Bound, Bounder, Index, IndexList, IndexedMap, KeyDeserialize, MultiIndex};
@@ -22,20 +22,20 @@ pub struct Request {
     pub merkle_root: String,
     pub threshold: u64,
     pub service: String,
-    pub input: Option<Binary>,
+    pub input: Option<String>,
 }
 
 #[cw_serde]
 pub struct DataSourceState {
     pub language: String,
     pub script_url: String,
-    pub parameters: Vec<Binary>,
+    pub parameters: Vec<String>,
 }
 
 #[cw_serde]
 pub struct TestCaseState {
-    pub inputs: Vec<Binary>,
-    pub expected_output: Binary,
+    pub inputs: Vec<String>,
+    pub expected_output: String,
 }
 
 #[cw_serde]
