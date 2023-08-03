@@ -107,7 +107,7 @@ pub fn handle_add_service(
 ) -> Result<Response, ContractError> {
     let service_info = read_service_info(deps.storage, service_msg.service_name.as_bytes()).ok();
     if service_info.is_some() {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::ServiceExists {});
     }
     store_service_info(
         deps.storage,

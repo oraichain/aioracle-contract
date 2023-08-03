@@ -159,7 +159,5 @@ pub struct UpdateConfigMsg {
     pub new_owner: Option<Addr>,
     pub new_executors: Option<Vec<String>>,
     pub old_executors: Option<Vec<String>>,
-    pub new_checkpoint: Option<u64>,
-    pub new_checkpoint_threshold: Option<u64>,
     pub new_max_req_threshold: Option<u64>,
 }

@@ -12,6 +12,8 @@ pub enum ContractError {
 
     #[error("Unauthorized")]
     Unauthorized {},
+    #[error("Service name exists. Cannot add new")]
+    ServiceExists {},
     #[error("Insufficient funds")]
     InsufficientFunds {},
     #[error("Already submitted")]
